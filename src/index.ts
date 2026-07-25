@@ -397,6 +397,17 @@ const start = async () => {
   await initDB();
   bot.launch();
   console.log('🗞️ Tikvah News Bot is running!');
+
+  // Keep Render Web Service happy by listening on a port
+  const http = require('http');
+  const PORT = process.env.PORT || 3000;
+  http.createServer((_: any, res: any) => {
+    res.writeHead(200);
+    res.end('Tikvah News Bot is running!');
+  }).listen(PORT, () => {
+    console.log(`HTTP server listening on port ${PORT}`);
+  });
+
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 };
