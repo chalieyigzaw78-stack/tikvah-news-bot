@@ -1,17 +1,48 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { Telegraf, Markup, Context } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import { Pool } from 'pg';
 import cron from 'node-cron';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
+
+// ─── Gemini AI ────────────────────────────────────────────────────────────────
+const askGemini = async (userMessage: string): Promise<string> => {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic. 
+              
+If the user writes in Amharic, respond in Amharic. If they write in English, respond in English. If mixed, respond in both.
+
+Keep responses short, friendly and informative. You are focused on Ethiopian news, culture, health, and general knowledge.
+
+User message: ${userMessage}`
+            }]
+          }]
+        })
+      }
+    );
+    const data = await response.json() as any;
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not process your request.';
+  } catch (err) {
+    return '⚠️ AI is temporarily unavailable. Please try again later.';
+  }
+};
 
 // ─── Database Setup ───────────────────────────────────────────────────────────
 const initDB = async () => {
@@ -60,14 +91,16 @@ const mainMenu = Markup.keyboard([
   ['📰 Latest News', '🔥 Breaking News'],
   ['📂 Categories', '🔍 Search News'],
   ['🌍 English News', '🇪🇹 Amharic News'],
-  ['📲 Install App', '❓ Help'],
+  ['🤖 Ask AI', '❓ Help'],
+  ['📲 Install App'],
 ]).resize();
 
 const adminMenu = Markup.keyboard([
   ['📰 Latest News', '🔥 Breaking News'],
   ['📂 Categories', '🔍 Search News'],
   ['🌍 English News', '🇪🇹 Amharic News'],
-  ['📲 Install App', '❓ Help'],
+  ['🤖 Ask AI', '❓ Help'],
+  ['📲 Install App'],
   ['📝 Post News', '📊 Stats'],
 ]).resize();
 
@@ -83,6 +116,7 @@ bot.start(async (ctx) => {
     `🗞️ Welcome to Tikvah News Bot!\n` +
     `Stay updated with the latest Ethiopian & world news\n` +
     `in both English and Amharic 🇪🇹\n\n` +
+    `💡 You can also tap 🤖 Ask AI to chat with our AI assistant!\n\n` +
     `Choose an option below:`,
     menu
   );
@@ -179,6 +213,20 @@ bot.hears('🔍 Search News', (ctx) => {
   ctx.reply('Type your search keyword:\nExample: politics', Markup.forceReply());
 });
 
+// ─── Ask AI ───────────────────────────────────────────────────────────────────
+bot.hears('🤖 Ask AI', (ctx) => {
+  ctx.reply(
+    `🤖 AI Assistant is ready!\n\n` +
+    `You can ask me anything in English or Amharic:\n\n` +
+    `Example:\n` +
+    `• What is happening in Ethiopia?\n` +
+    `• ስለ ጤና ጥቆማ ስጠኝ\n` +
+    `• What are the latest African Cup results?\n\n` +
+    `Just type your question below! 👇`,
+    Markup.forceReply()
+  );
+});
+
 // ─── Install App ──────────────────────────────────────────────────────────────
 bot.hears('📲 Install App', (ctx) => {
   ctx.reply(
@@ -206,7 +254,8 @@ bot.hears('❓ Help', (ctx) => {
     `📂 Categories — browse by topic\n` +
     `🔍 Search News — search by keyword\n` +
     `🌍 English News — English only\n` +
-    `🇪🇹 Amharic News — Amharic only\n\n` +
+    `🇪🇹 Amharic News — Amharic only\n` +
+    `🤖 Ask AI — chat with AI assistant\n\n` +
     `📩 To report news tips, contact us on Telegram.`,
     mainMenu
   );
@@ -246,13 +295,13 @@ bot.hears('📊 Stats', async (ctx) => {
   }
 });
 
-// ─── Handle Text (Search + News Posting) ─────────────────────────────────────
+// ─── Handle Text ──────────────────────────────────────────────────────────────
 bot.on('text', async (ctx) => {
   const text = (ctx.message as any)?.text || '';
   if (text.startsWith('/')) return;
 
+  // Admin posting news
   const adminPosting = isAdmin(ctx.chat.id) && (text.includes('TITLE_EN:') || text.includes('TITLE_AM:'));
-
   if (adminPosting) {
     try {
       const getField = (field: string): string | null => {
@@ -260,7 +309,6 @@ bot.on('text', async (ctx) => {
         const match = text.match(regex);
         return match ? match[1].trim() : null;
       };
-
       const title_en = getField('TITLE_EN');
       const title_am = getField('TITLE_AM');
       const content_en = getField('CONTENT_EN');
@@ -285,39 +333,45 @@ bot.on('text', async (ctx) => {
         try { await bot.telegram.sendMessage(chatId, message); sent++; } catch {}
       }
       ctx.reply(`✅ News posted and sent to ${sent} subscribers!`, adminMenu);
-    } catch (err) {
+    } catch {
       ctx.reply('⚠️ Failed to post news. Check the format and try again.');
     }
     return;
   }
 
-  // Search
+  // Search first in database
   try {
     const result = await pool.query(
       `SELECT * FROM news WHERE
         title_en ILIKE $1 OR title_am ILIKE $1 OR
         content_en ILIKE $1 OR content_am ILIKE $1 OR
         category ILIKE $1
-       ORDER BY created_at DESC LIMIT 5`,
+       ORDER BY created_at DESC LIMIT 3`,
       [`%${text}%`]
     );
-    if (result.rows.length === 0) return ctx.reply(`No news found for "${text}".`, mainMenu);
-    for (const n of result.rows) {
-      let msg = '';
-      if (n.title_en) msg += `📌 ${n.title_en}\n`;
-      if (n.title_am) msg += `📌 ${n.title_am}\n`;
-      msg += `📂 ${n.category}\n\n`;
-      if (n.content_en) msg += `🌍 ${n.content_en}\n\n`;
-      if (n.content_am) msg += `🇪🇹 ${n.content_am}`;
-      await ctx.reply(msg);
+
+    if (result.rows.length > 0) {
+      for (const n of result.rows) {
+        let msg = '';
+        if (n.title_en) msg += `📌 ${n.title_en}\n`;
+        if (n.title_am) msg += `📌 ${n.title_am}\n`;
+        msg += `📂 ${n.category}\n\n`;
+        if (n.content_en) msg += `🌍 ${n.content_en}\n\n`;
+        if (n.content_am) msg += `🇪🇹 ${n.content_am}`;
+        await ctx.reply(msg);
+      }
+      ctx.reply('─────────────────', mainMenu);
+      return;
     }
-    ctx.reply('─────────────────', mainMenu);
-  } catch {
-    ctx.reply('⚠️ Search failed. Please try again.', mainMenu);
-  }
+  } catch {}
+
+  // If nothing found in DB, ask Gemini AI
+  await ctx.reply('🤖 Let me think about that...');
+  const aiResponse = await askGemini(text);
+  ctx.reply(`🤖 AI:\n\n${aiResponse}`, mainMenu);
 });
 
-// ─── Daily Morning Digest (7AM Addis Ababa time) ─────────────────────────────
+// ─── Daily Morning Digest (7AM) ───────────────────────────────────────────────
 cron.schedule('0 7 * * *', async () => {
   try {
     const result = await pool.query(`SELECT * FROM news ORDER BY created_at DESC LIMIT 3`);
@@ -342,7 +396,7 @@ cron.schedule('0 7 * * *', async () => {
 const start = async () => {
   await initDB();
   bot.launch();
-  console.log('Tikvah News Bot is running!');
+  console.log('🗞️ Tikvah News Bot is running!');
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 };
