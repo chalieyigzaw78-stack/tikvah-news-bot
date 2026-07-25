@@ -8,46 +8,50 @@ import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// ─── Gemini AI ────────────────────────────────────────────────────────────────
-const askGemini = async (userMessage: string): Promise<string> => {
+// ─── Groq AI ──────────────────────────────────────────────────────────────────
+const askAI = async (userMessage: string): Promise<string> => {
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic.
-If the user writes in Amharic, respond in Amharic. If they write in English, respond in English.
-Keep responses short, friendly and informative. Focus on Ethiopian news, culture, health, and general knowledge.
-User message: ${userMessage}`
-            }]
-          }]
-        })
-      }
-    );
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama3-8b-8192',
+        messages: [
+          {
+            role: 'system',
+            content: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic. If the user writes in Amharic, respond in Amharic. If they write in English, respond in English. Keep responses short, friendly and informative. Focus on Ethiopian news, culture, health, and general knowledge.`
+          },
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ],
+        max_tokens: 500
+      })
+    });
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('Gemini error:', data.error);
+      console.error('Groq error:', data.error);
       return '⚠️ AI is temporarily unavailable. Please try again later.';
     }
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
+    return data?.choices?.[0]?.message?.content || '⚠️ No response from AI.';
   } catch (err) {
-    console.error('Gemini fetch error:', err);
+    console.error('Groq error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
   }
 };
 
-// ─── Database Setup ───────────────────────────────────────────────────────────
+// ─── Database ─────────────────────────────────────────────────────────────────
 const initDB = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS subscribers (
@@ -300,20 +304,17 @@ bot.on('text', async (ctx) => {
       const content_en = getField('CONTENT_EN');
       const content_am = getField('CONTENT_AM');
       const category = getField('CATEGORY') || 'General';
-
       await pool.query(
         `INSERT INTO news (title_en, title_am, content_en, content_am, category, posted_by)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [title_en, title_am, content_en, content_am, category, ctx.chat.id]
       );
-
       const subscribers = await getAllSubscribers();
       let message = `📰 NEW: ${category}\n\n`;
       if (title_en) message += `📌 ${title_en}\n`;
       if (title_am) message += `📌 ${title_am}\n\n`;
       if (content_en) message += `🌍 ${content_en}\n\n`;
       if (content_am) message += `🇪🇹 ${content_am}`;
-
       let sent = 0;
       for (const chatId of subscribers) {
         try { await bot.telegram.sendMessage(chatId, message); sent++; } catch {}
@@ -325,7 +326,7 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Search in DB first
+  // Search DB first
   try {
     const result = await pool.query(
       `SELECT * FROM news WHERE
@@ -350,13 +351,13 @@ bot.on('text', async (ctx) => {
     }
   } catch {}
 
-  // Ask Gemini AI
+  // Ask Groq AI
   await ctx.reply('🤖 Let me think about that...');
-  const aiResponse = await askGemini(text);
+  const aiResponse = await askAI(text);
   ctx.reply(`🤖 AI:\n\n${aiResponse}`, mainMenu);
 });
 
-// ─── Daily Digest ─────────────────────────────────────────────────────────────
+// ─── Daily Digest 7AM ─────────────────────────────────────────────────────────
 cron.schedule('0 7 * * *', async () => {
   try {
     const result = await pool.query(`SELECT * FROM news ORDER BY created_at DESC LIMIT 3`);
@@ -382,7 +383,6 @@ const start = async () => {
   await initDB();
   bot.launch();
   console.log('🗞️ Tikvah News Bot is running!');
-
   const PORT = process.env.PORT || 3000;
   http.createServer((_: any, res: any) => {
     res.writeHead(200);
@@ -390,7 +390,6 @@ const start = async () => {
   }).listen(PORT, () => {
     console.log(`HTTP server listening on port ${PORT}`);
   });
-
   process.once('SIGINT', () => bot.stop('SIGINT'));
   process.once('SIGTERM', () => bot.stop('SIGTERM'));
 };
