@@ -4,6 +4,7 @@ dotenv.config();
 import { Telegraf, Markup } from 'telegraf';
 import { Pool } from 'pg';
 import cron from 'node-cron';
+import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
@@ -18,19 +19,16 @@ const pool = new Pool({
 const askGemini = async (userMessage: string): Promise<string> => {
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic. 
-              
-If the user writes in Amharic, respond in Amharic. If they write in English, respond in English. If mixed, respond in both.
-
-Keep responses short, friendly and informative. You are focused on Ethiopian news, culture, health, and general knowledge.
-
+              text: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic.
+If the user writes in Amharic, respond in Amharic. If they write in English, respond in English.
+Keep responses short, friendly and informative. Focus on Ethiopian news, culture, health, and general knowledge.
 User message: ${userMessage}`
             }]
           }]
@@ -38,8 +36,13 @@ User message: ${userMessage}`
       }
     );
     const data = await response.json() as any;
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not process your request.';
+    if (data?.error) {
+      console.error('Gemini error:', data.error);
+      return '⚠️ AI is temporarily unavailable. Please try again later.';
+    }
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
   } catch (err) {
+    console.error('Gemini fetch error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
   }
 };
@@ -54,7 +57,6 @@ const initDB = async () => {
       first_name VARCHAR(255),
       joined_at TIMESTAMP DEFAULT NOW()
     );
-
     CREATE TABLE IF NOT EXISTS news (
       id SERIAL PRIMARY KEY,
       title_en TEXT,
@@ -84,7 +86,7 @@ const getAllSubscribers = async (): Promise<number[]> => {
 
 const isAdmin = (chatId: number) => String(chatId) === String(ADMIN_CHAT_ID);
 
-// ─── Bot Setup ────────────────────────────────────────────────────────────────
+// ─── Bot ──────────────────────────────────────────────────────────────────────
 const bot = new Telegraf(BOT_TOKEN);
 
 const mainMenu = Markup.keyboard([
@@ -104,7 +106,6 @@ const adminMenu = Markup.keyboard([
   ['📝 Post News', '📊 Stats'],
 ]).resize();
 
-// ─── Start ────────────────────────────────────────────────────────────────────
 bot.start(async (ctx) => {
   const chatId = ctx.chat.id;
   const username = ctx.from?.username || '';
@@ -116,13 +117,12 @@ bot.start(async (ctx) => {
     `🗞️ Welcome to Tikvah News Bot!\n` +
     `Stay updated with the latest Ethiopian & world news\n` +
     `in both English and Amharic 🇪🇹\n\n` +
-    `💡 You can also tap 🤖 Ask AI to chat with our AI assistant!\n\n` +
+    `💡 Tap 🤖 Ask AI to chat with our AI assistant!\n\n` +
     `Choose an option below:`,
     menu
   );
 });
 
-// ─── Latest News ──────────────────────────────────────────────────────────────
 bot.hears('📰 Latest News', async (ctx) => {
   try {
     const result = await pool.query(`SELECT * FROM news ORDER BY created_at DESC LIMIT 5`);
@@ -143,7 +143,6 @@ bot.hears('📰 Latest News', async (ctx) => {
   }
 });
 
-// ─── Breaking News ────────────────────────────────────────────────────────────
 bot.hears('🔥 Breaking News', async (ctx) => {
   try {
     const result = await pool.query(
@@ -164,7 +163,6 @@ bot.hears('🔥 Breaking News', async (ctx) => {
   }
 });
 
-// ─── Categories ───────────────────────────────────────────────────────────────
 bot.hears('📂 Categories', (ctx) => {
   ctx.reply(
     `📂 News Categories:\n\n` +
@@ -176,7 +174,6 @@ bot.hears('📂 Categories', (ctx) => {
   );
 });
 
-// ─── English News ─────────────────────────────────────────────────────────────
 bot.hears('🌍 English News', async (ctx) => {
   try {
     const result = await pool.query(
@@ -192,7 +189,6 @@ bot.hears('🌍 English News', async (ctx) => {
   }
 });
 
-// ─── Amharic News ─────────────────────────────────────────────────────────────
 bot.hears('🇪🇹 Amharic News', async (ctx) => {
   try {
     const result = await pool.query(
@@ -208,26 +204,21 @@ bot.hears('🇪🇹 Amharic News', async (ctx) => {
   }
 });
 
-// ─── Search ───────────────────────────────────────────────────────────────────
 bot.hears('🔍 Search News', (ctx) => {
   ctx.reply('Type your search keyword:\nExample: politics', Markup.forceReply());
 });
 
-// ─── Ask AI ───────────────────────────────────────────────────────────────────
 bot.hears('🤖 Ask AI', (ctx) => {
   ctx.reply(
     `🤖 AI Assistant is ready!\n\n` +
-    `You can ask me anything in English or Amharic:\n\n` +
-    `Example:\n` +
+    `Ask me anything in English or Amharic:\n\n` +
     `• What is happening in Ethiopia?\n` +
     `• ስለ ጤና ጥቆማ ስጠኝ\n` +
     `• What are the latest African Cup results?\n\n` +
-    `Just type your question below! 👇`,
-    Markup.forceReply()
+    `Just type your question! 👇`
   );
 });
 
-// ─── Install App ──────────────────────────────────────────────────────────────
 bot.hears('📲 Install App', (ctx) => {
   ctx.reply(
     `📲 Install Tikvah News as an App:\n\n` +
@@ -245,7 +236,6 @@ bot.hears('📲 Install App', (ctx) => {
   );
 });
 
-// ─── Help ─────────────────────────────────────────────────────────────────────
 bot.hears('❓ Help', (ctx) => {
   ctx.reply(
     `📖 How to use Tikvah News Bot:\n\n` +
@@ -261,7 +251,6 @@ bot.hears('❓ Help', (ctx) => {
   );
 });
 
-// ─── Admin: Post News ─────────────────────────────────────────────────────────
 bot.hears('📝 Post News', (ctx) => {
   if (!isAdmin(ctx.chat.id)) return ctx.reply('⛔ Admin only.', mainMenu);
   ctx.reply(
@@ -275,7 +264,6 @@ bot.hears('📝 Post News', (ctx) => {
   );
 });
 
-// ─── Admin: Stats ─────────────────────────────────────────────────────────────
 bot.hears('📊 Stats', async (ctx) => {
   if (!isAdmin(ctx.chat.id)) return ctx.reply('⛔ Admin only.', mainMenu);
   try {
@@ -295,12 +283,10 @@ bot.hears('📊 Stats', async (ctx) => {
   }
 });
 
-// ─── Handle Text ──────────────────────────────────────────────────────────────
 bot.on('text', async (ctx) => {
   const text = (ctx.message as any)?.text || '';
   if (text.startsWith('/')) return;
 
-  // Admin posting news
   const adminPosting = isAdmin(ctx.chat.id) && (text.includes('TITLE_EN:') || text.includes('TITLE_AM:'));
   if (adminPosting) {
     try {
@@ -339,7 +325,7 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Search first in database
+  // Search in DB first
   try {
     const result = await pool.query(
       `SELECT * FROM news WHERE
@@ -349,7 +335,6 @@ bot.on('text', async (ctx) => {
        ORDER BY created_at DESC LIMIT 3`,
       [`%${text}%`]
     );
-
     if (result.rows.length > 0) {
       for (const n of result.rows) {
         let msg = '';
@@ -365,13 +350,13 @@ bot.on('text', async (ctx) => {
     }
   } catch {}
 
-  // If nothing found in DB, ask Gemini AI
+  // Ask Gemini AI
   await ctx.reply('🤖 Let me think about that...');
   const aiResponse = await askGemini(text);
   ctx.reply(`🤖 AI:\n\n${aiResponse}`, mainMenu);
 });
 
-// ─── Daily Morning Digest (7AM) ───────────────────────────────────────────────
+// ─── Daily Digest ─────────────────────────────────────────────────────────────
 cron.schedule('0 7 * * *', async () => {
   try {
     const result = await pool.query(`SELECT * FROM news ORDER BY created_at DESC LIMIT 3`);
@@ -392,14 +377,12 @@ cron.schedule('0 7 * * *', async () => {
   }
 }, { timezone: 'Africa/Addis_Ababa' });
 
-// ─── Launch ───────────────────────────────────────────────────────────────────
+// ─── Start ────────────────────────────────────────────────────────────────────
 const start = async () => {
   await initDB();
   bot.launch();
   console.log('🗞️ Tikvah News Bot is running!');
 
-  // Keep Render Web Service happy by listening on a port
-  const http = require('http');
   const PORT = process.env.PORT || 3000;
   http.createServer((_: any, res: any) => {
     res.writeHead(200);
