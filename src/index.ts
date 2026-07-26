@@ -8,36 +8,45 @@ import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// ─── Gemini AI ────────────────────────────────────────────────────────────────
+// ─── Groq AI ──────────────────────────────────────────────────────────────────
 const askAI = async (userMessage: string): Promise<string> => {
   try {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' + GEMINI_API_KEY;
-    const response = await fetch(url, {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + GROQ_API_KEY
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: 'You are an Ethiopian news assistant fluent in Amharic and English. If the user writes in Amharic respond in perfect Amharic. If English respond in English. Be short and friendly. Do not make up news.\n\nUser: ' + userMessage
-          }]
-        }]
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an Ethiopian assistant fluent in both Amharic and English. When the user writes in Amharic, always respond in proper, natural Ethiopian Amharic using correct grammar and vocabulary. When they write in English, respond in English. Never mix languages unless necessary. Be concise, friendly, and helpful. Never fabricate news or current events.'
+          },
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ],
+        max_tokens: 500
       })
     });
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('Gemini error:', JSON.stringify(data.error));
+      console.error('Groq error:', JSON.stringify(data.error));
       return '⚠️ Error: ' + (data.error.message || 'Unknown error');
     }
-    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
+    return data?.choices?.[0]?.message?.content || '⚠️ No response from AI.';
   } catch (err) {
-    console.error('Gemini error:', err);
+    console.error('Groq error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
   }
 };
@@ -68,8 +77,7 @@ const initDB = async () => {
 
 const saveSubscriber = async (chatId: number, username: string, firstName: string) => {
   await pool.query(
-    `INSERT INTO subscribers (chat_id, username, first_name)
-     VALUES ($1, $2, $3) ON CONFLICT (chat_id) DO NOTHING`,
+    'INSERT INTO subscribers (chat_id, username, first_name) VALUES ($1, $2, $3) ON CONFLICT (chat_id) DO NOTHING',
     [chatId, username, firstName]
   );
 };
@@ -337,7 +345,7 @@ bot.on('text', async (ctx) => {
     }
   } catch {}
 
-  // Ask Gemini AI
+  // Ask Groq AI
   await ctx.reply('🤖 Let me think about that...');
   const aiResponse = await askAI(text);
   ctx.reply('🤖 AI:\n\n' + aiResponse, mainMenu);
@@ -349,7 +357,7 @@ cron.schedule('0 7 * * *', async () => {
     const result = await pool.query('SELECT * FROM news ORDER BY created_at DESC LIMIT 3');
     if (result.rows.length === 0) return;
     const subscribers = await getAllSubscribers();
-    let digest = '🌅 Good Morning! የሚበጃ ቀን!\n\n📰 Today\'s Top News:\n\n';
+    let digest = '🌅 Good Morning! ብሩህ ቀን!\n\n📰 Today\'s Top News:\n\n';
     result.rows.forEach((n: any, i: number) => {
       if (n.title_en) digest += (i + 1) + '. ' + n.title_en + '\n';
       if (n.title_am) digest += '   ' + n.title_am + '\n';
@@ -368,7 +376,7 @@ cron.schedule('0 7 * * *', async () => {
 const start = async () => {
   await initDB();
   bot.launch();
-  console.log('🗞️ Tikvah News Bot is running!');
+  console.log('Tikvah News Bot is running!');
   const PORT = process.env.PORT || 3000;
   http.createServer((_: any, res: any) => {
     res.writeHead(200);
