@@ -13,7 +13,22 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
-    content: 'You are Tikvah, a friendly female Ethiopian news assistant working for Tikvah News Bot on Telegram. You are fluent in both Amharic and English. When the user writes in Amharic, always respond in proper, natural, beautiful Ethiopian Amharic — never use transliteration or mix with English words. When they write in English, respond in English. You help users with questions about Ethiopian news, history, culture, health, and education. Always introduce yourself as Tikvah when asked. Never make up current news — tell users to use the Latest News button for current events. Be warm, professional, and concise.'
+});
+
+const askAI = async (userMessage: string): Promise<string> => {
+  try {
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + GROQ_API_KEY
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are Tikvah, a friendly female Ethiopian news assistant working for Tikvah News Bot on Telegram. You are fluent in both Amharic and English. When the user writes in Amharic, always respond in proper, natural, beautiful Ethiopian Amharic — never use transliteration or mix with English words. When they write in English, respond in English. You help users with questions about Ethiopian news, history, culture, health, and education. Always introduce yourself as Tikvah when asked. Never make up current news — tell users to use the Latest News button for current events. Be warm, professional, and concise.'
           },
           {
             role: 'user',
@@ -35,7 +50,6 @@ const pool = new Pool({
   }
 };
 
-// ─── Database ─────────────────────────────────────────────────────────────────
 const initDB = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS subscribers (
@@ -73,14 +87,13 @@ const getAllSubscribers = async (): Promise<number[]> => {
 
 const isAdmin = (chatId: number) => String(chatId) === String(ADMIN_CHAT_ID);
 
-// ─── Bot ──────────────────────────────────────────────────────────────────────
 const bot = new Telegraf(BOT_TOKEN);
 
 const mainMenu = Markup.keyboard([
   ['📰 Latest News', '🔥 Breaking News'],
   ['📂 Categories', '🔍 Search News'],
   ['🌍 English News', '🇪🇹 Amharic News'],
-  ['🤖 Ask AI', '❓ Help'],
+  ['👩‍💼 Ask Tikvah', '❓ Help'],
   ['📲 Install App'],
 ]).resize();
 
@@ -103,8 +116,8 @@ bot.start(async (ctx) => {
     '👋 እንኳን ደህና መጡ ' + firstName + '!\n\n' +
     '🗞️ Welcome to Tikvah News Bot!\n' +
     'Stay updated with the latest Ethiopian & world news\n' +
-    'in both English and Amharic 🇪🇹\n\n' +
-    '💡 Tap👩‍💼 Ask Tikvah to chat with our AI assistant!\n\n' +
+    'in both English and Amharic\n\n' +
+    '💡 Tap 👩‍💼 Ask Tikvah to chat with our AI assistant!\n\n' +
     'Choose an option below:',
     menu
   );
@@ -197,11 +210,12 @@ bot.hears('🔍 Search News', (ctx) => {
 
 bot.hears('👩‍💼 Ask Tikvah', (ctx) => {
   ctx.reply(
-    '👩‍💼 AI Assistant is ready!\n\n' +
+    '👩‍💼 Hi! I am Tikvah, your Ethiopian news assistant!\n\n' +
     'Ask me anything in English or Amharic:\n\n' +
-    '• What is happening in Ethiopia?\n' +
+    '• Tell me about Ethiopian history\n' +
     '• ስለ ጤና ጥቆማ ስጠኝ\n' +
-    '• Tell me about Ethiopian history\n\n' +
+    '• What is the capital of Ethiopia?\n' +
+    '• የኢትዮጵያ ባህል ምን ይመስላል?\n\n' +
     'Just type your question! 👇'
   );
 });
@@ -211,14 +225,14 @@ bot.hears('📲 Install App', (ctx) => {
     '📲 Install Tikvah News as an App:\n\n' +
     '🤖 Android (Chrome):\n' +
     '1. Open Chrome browser\n' +
-    '2. Tap the 3 dots menu ⋮\n' +
+    '2. Tap the 3 dots menu\n' +
     '3. Tap "Add to Home Screen"\n' +
-    '4. Tap "Add" — done! ✅\n\n' +
+    '4. Tap "Add" done!\n\n' +
     '🍎 iPhone (Safari):\n' +
     '1. Open Safari browser\n' +
-    '2. Tap the Share button ⬆️\n' +
+    '2. Tap the Share button\n' +
     '3. Tap "Add to Home Screen"\n' +
-    '4. Tap "Add" — done! ✅',
+    '4. Tap "Add" done!',
     mainMenu
   );
 });
@@ -308,7 +322,6 @@ bot.on('text', async (ctx) => {
     return;
   }
 
-  // Search DB first
   try {
     const result = await pool.query(
       'SELECT * FROM news WHERE title_en ILIKE $1 OR title_am ILIKE $1 OR content_en ILIKE $1 OR content_am ILIKE $1 OR category ILIKE $1 ORDER BY created_at DESC LIMIT 3',
@@ -329,19 +342,17 @@ bot.on('text', async (ctx) => {
     }
   } catch {}
 
-  // Ask Groq AI
-  await ctx.reply('👩‍💼 Let me think about that...');
+  await ctx.reply('👩‍💼 Tikvah is thinking...');
   const aiResponse = await askAI(text);
-  ctx.reply('👩‍💼 AI:\n\n' + aiResponse, mainMenu);
+  ctx.reply('👩‍💼 Tikvah:\n\n' + aiResponse, mainMenu);
 });
 
-// ─── Daily Digest 7AM ─────────────────────────────────────────────────────────
 cron.schedule('0 7 * * *', async () => {
   try {
     const result = await pool.query('SELECT * FROM news ORDER BY created_at DESC LIMIT 3');
     if (result.rows.length === 0) return;
     const subscribers = await getAllSubscribers();
-    let digest = '🌅 Good Morning! ብሩህ ቀን!\n\n📰 Today\'s Top News:\n\n';
+    let digest = '🌅 Good Morning! የሚበጃ ቀን!\n\n📰 Today\'s Top News:\n\n';
     result.rows.forEach((n: any, i: number) => {
       if (n.title_en) digest += (i + 1) + '. ' + n.title_en + '\n';
       if (n.title_am) digest += '   ' + n.title_am + '\n';
@@ -356,7 +367,6 @@ cron.schedule('0 7 * * *', async () => {
   }
 }, { timezone: 'Africa/Addis_Ababa' });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
 const start = async () => {
   await initDB();
   bot.launch();
