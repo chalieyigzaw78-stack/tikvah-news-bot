@@ -13,23 +13,7 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY!;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
-});
-
-// ─── Groq AI ──────────────────────────────────────────────────────────────────
-const askAI = async (userMessage: string): Promise<string> => {
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + GROQ_API_KEY
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are an Ethiopian assistant fluent in both Amharic and English. When the user writes in Amharic, always respond in proper, natural Ethiopian Amharic using correct grammar and vocabulary. When they write in English, respond in English. Never mix languages unless necessary. Be concise, friendly, and helpful. Never fabricate news or current events.'
+    content: 'You are Tikvah, a friendly female Ethiopian news assistant working for Tikvah News Bot on Telegram. You are fluent in both Amharic and English. When the user writes in Amharic, always respond in proper, natural, beautiful Ethiopian Amharic — never use transliteration or mix with English words. When they write in English, respond in English. You help users with questions about Ethiopian news, history, culture, health, and education. Always introduce yourself as Tikvah when asked. Never make up current news — tell users to use the Latest News button for current events. Be warm, professional, and concise.'
           },
           {
             role: 'user',
@@ -104,7 +88,7 @@ const adminMenu = Markup.keyboard([
   ['📰 Latest News', '🔥 Breaking News'],
   ['📂 Categories', '🔍 Search News'],
   ['🌍 English News', '🇪🇹 Amharic News'],
-  ['🤖 Ask AI', '❓ Help'],
+  ['👩‍💼 Ask Tikvah', '❓ Help'],
   ['📲 Install App'],
   ['📝 Post News', '📊 Stats'],
 ]).resize();
@@ -120,7 +104,7 @@ bot.start(async (ctx) => {
     '🗞️ Welcome to Tikvah News Bot!\n' +
     'Stay updated with the latest Ethiopian & world news\n' +
     'in both English and Amharic 🇪🇹\n\n' +
-    '💡 Tap 🤖 Ask AI to chat with our AI assistant!\n\n' +
+    '💡 Tap👩‍💼 Ask Tikvah to chat with our AI assistant!\n\n' +
     'Choose an option below:',
     menu
   );
@@ -211,9 +195,9 @@ bot.hears('🔍 Search News', (ctx) => {
   ctx.reply('Type your search keyword:\nExample: politics', Markup.forceReply());
 });
 
-bot.hears('🤖 Ask AI', (ctx) => {
+bot.hears('👩‍💼 Ask Tikvah', (ctx) => {
   ctx.reply(
-    '🤖 AI Assistant is ready!\n\n' +
+    '👩‍💼 AI Assistant is ready!\n\n' +
     'Ask me anything in English or Amharic:\n\n' +
     '• What is happening in Ethiopia?\n' +
     '• ስለ ጤና ጥቆማ ስጠኝ\n' +
@@ -248,7 +232,7 @@ bot.hears('❓ Help', (ctx) => {
     '🔍 Search News — search by keyword\n' +
     '🌍 English News — English only\n' +
     '🇪🇹 Amharic News — Amharic only\n' +
-    '🤖 Ask AI — chat with AI assistant\n\n' +
+    '👩‍💼 Ask Tikvah — chat with AI assistant\n\n' +
     '📩 To report news tips, contact us on Telegram.',
     mainMenu
   );
@@ -346,9 +330,9 @@ bot.on('text', async (ctx) => {
   } catch {}
 
   // Ask Groq AI
-  await ctx.reply('🤖 Let me think about that...');
+  await ctx.reply('👩‍💼 Let me think about that...');
   const aiResponse = await askAI(text);
-  ctx.reply('🤖 AI:\n\n' + aiResponse, mainMenu);
+  ctx.reply('👩‍💼 AI:\n\n' + aiResponse, mainMenu);
 });
 
 // ─── Daily Digest 7AM ─────────────────────────────────────────────────────────
