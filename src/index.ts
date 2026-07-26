@@ -8,49 +8,35 @@ import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
-const GROQ_API_KEY = process.env.GROQ_API_KEY!;
-
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// ─── Groq AI ──────────────────────────────────────────────────────────────────
-const askAI = async (userMessage: string): Promise<string> => {
-  try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          {
-            role: 'system',
-            content: `You are Tikvah News Bot assistant. You help Ethiopian users with news, information, and questions in both English and Amharic. If the user writes in Amharic, respond in Amharic. If they write in English, respond in English. Keep responses short, friendly and informative. Focus on Ethiopian news, culture, health, and general knowledge.`
-          },
-          {
-            role: 'user',
-            content: userMessage
-          }
-        ],
-        max_tokens: 500
-      })
-    });
+// ─── Gemini AI ──────────────────────────────────────────────────────────────────
+const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `You are Tikvah News Bot assistant. You help Ethiopian users with questions in both English and Amharic. If the user writes in Amharic, respond in Amharic beautifully and accurately. If they write in English, respond in English. Keep responses short, friendly and informative. Do NOT make up news stories. Only answer general knowledge questions about Ethiopia, health, culture, history, and education. If someone asks about current news, tell them to use the Latest News button instead.
+              
+User message: ${userMessage}`
+            }]
+          }]
+        })
+      }
+    );
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('Groq error:', data.error);
+      console.error('Gemini error:', data.error);
       return '⚠️ AI is temporarily unavailable. Please try again later.';
     }
-    return data?.choices?.[0]?.message?.content || '⚠️ No response from AI.';
-  } catch (err) {
-    console.error('Groq error:', err);
-    return '⚠️ AI is temporarily unavailable. Please try again later.';
-  }
-};
-
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
 // ─── Database ─────────────────────────────────────────────────────────────────
 const initDB = async () => {
   await pool.query(`
