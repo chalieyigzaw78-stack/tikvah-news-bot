@@ -18,16 +18,16 @@ const pool = new Pool({
 // ─── Gemini AI ────────────────────────────────────────────────────────────────
 const askAI = async (userMessage: string): Promise<string> => {
   try {
-    const url = 'https://generativelanguage.googleapis.com/v1beta/interactions';
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=' + GEMINI_API_KEY;
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': GEMINI_API_KEY
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.5-flash',
-        input: 'You are Tikvah News Bot assistant. If the user writes in Amharic respond in perfect Amharic. If English respond in English. Be short and friendly. Do not make up news.\n\nUser: ' + userMessage
+        contents: [{
+          parts: [{
+            text: 'You are an Ethiopian news assistant fluent in Amharic and English. If the user writes in Amharic respond in perfect Amharic. If English respond in English. Be short and friendly. Do not make up news.\n\nUser: ' + userMessage
+          }]
+        }]
       })
     });
     const data = await response.json() as any;
@@ -35,7 +35,7 @@ const askAI = async (userMessage: string): Promise<string> => {
       console.error('Gemini error:', JSON.stringify(data.error));
       return '⚠️ Error: ' + (data.error.message || 'Unknown error');
     }
-    return data?.output_text || data?.steps?.[0]?.modelOutput?.content?.[0]?.text?.text || '⚠️ No response from AI.';
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
   } catch (err) {
     console.error('Gemini error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
