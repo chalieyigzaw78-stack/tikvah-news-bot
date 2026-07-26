@@ -9,13 +9,16 @@ import * as http from 'http';
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// ─── Gemini AI ──────────────────────────────────────────────────────────────────
-const response = await fetch(
+// ─── Gemini AI ────────────────────────────────────────────────────────────────
+const askAI = async (userMessage: string): Promise<string> => {
+  try {
+    const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
@@ -24,7 +27,7 @@ const response = await fetch(
           contents: [{
             parts: [{
               text: `You are Tikvah News Bot assistant. You help Ethiopian users with questions in both English and Amharic. If the user writes in Amharic, respond in Amharic beautifully and accurately. If they write in English, respond in English. Keep responses short, friendly and informative. Do NOT make up news stories. Only answer general knowledge questions about Ethiopia, health, culture, history, and education. If someone asks about current news, tell them to use the Latest News button instead.
-              
+
 User message: ${userMessage}`
             }]
           }]
@@ -37,6 +40,12 @@ User message: ${userMessage}`
       return '⚠️ AI is temporarily unavailable. Please try again later.';
     }
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
+  } catch (err) {
+    console.error('Gemini error:', err);
+    return '⚠️ AI is temporarily unavailable. Please try again later.';
+  }
+};
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 const initDB = async () => {
   await pool.query(`
@@ -337,7 +346,7 @@ bot.on('text', async (ctx) => {
     }
   } catch {}
 
-  // Ask Groq AI
+  // Ask Gemini AI
   await ctx.reply('🤖 Let me think about that...');
   const aiResponse = await askAI(text);
   ctx.reply(`🤖 AI:\n\n${aiResponse}`, mainMenu);
