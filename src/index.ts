@@ -36,8 +36,8 @@ User message: ${userMessage}`
     );
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('Gemini error:', data.error);
-      return '⚠️ AI is temporarily unavailable. Please try again later.';
+      console.error('Gemini error:', JSON.stringify(data.error));
+      return `⚠️ Error: ${data.error.message || 'Unknown error'}`;
     }
     return data?.candidates?.[0]?.content?.parts?.[0]?.text || '⚠️ No response from AI.';
   } catch (err) {
