@@ -8,23 +8,24 @@ import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
-const GROQ_API_KEY = process.env.GROQ_API_KEY!;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
+// ─── OpenAI ───────────────────────────────────────────────────────────────────
 const askAI = async (userMessage: string): Promise<string> => {
   try {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + GROQ_API_KEY
+        'Authorization': 'Bearer ' + OPENAI_API_KEY
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -40,16 +41,17 @@ const askAI = async (userMessage: string): Promise<string> => {
     });
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('Groq error:', JSON.stringify(data.error));
+      console.error('OpenAI error:', JSON.stringify(data.error));
       return '⚠️ Error: ' + (data.error.message || 'Unknown error');
     }
     return data?.choices?.[0]?.message?.content || '⚠️ No response from AI.';
   } catch (err) {
-    console.error('Groq error:', err);
+    console.error('OpenAI error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
   }
 };
 
+// ─── Database ─────────────────────────────────────────────────────────────────
 const initDB = async () => {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS subscribers (
@@ -87,6 +89,7 @@ const getAllSubscribers = async (): Promise<number[]> => {
 
 const isAdmin = (chatId: number) => String(chatId) === String(ADMIN_CHAT_ID);
 
+// ─── Bot ──────────────────────────────────────────────────────────────────────
 const bot = new Telegraf(BOT_TOKEN);
 
 const mainMenu = Markup.keyboard([
@@ -116,7 +119,7 @@ bot.start(async (ctx) => {
     '👋 እንኳን ደህና መጡ ' + firstName + '!\n\n' +
     '🗞️ Welcome to Tikvah News Bot!\n' +
     'Stay updated with the latest Ethiopian & world news\n' +
-    'in both English and Amharic\n\n' +
+    'in both English and Amharic 🇪🇹\n\n' +
     '💡 Tap 👩‍💼 Ask Tikvah to chat with our AI assistant!\n\n' +
     'Choose an option below:',
     menu
