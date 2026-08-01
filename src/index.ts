@@ -8,24 +8,24 @@ import * as http from 'http';
 
 const BOT_TOKEN = process.env.BOT_TOKEN!;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID!;
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY!;
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY!;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// ─── OpenAI ───────────────────────────────────────────────────────────────────
+// ─── DeepSeek AI ──────────────────────────────────────────────────────────────
 const askAI = async (userMessage: string): Promise<string> => {
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + OPENAI_API_KEY
+        'Authorization': 'Bearer ' + DEEPSEEK_API_KEY
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'deepseek-chat',
         messages: [
           {
             role: 'system',
@@ -41,12 +41,12 @@ const askAI = async (userMessage: string): Promise<string> => {
     });
     const data = await response.json() as any;
     if (data?.error) {
-      console.error('OpenAI error:', JSON.stringify(data.error));
+      console.error('DeepSeek error:', JSON.stringify(data.error));
       return '⚠️ Error: ' + (data.error.message || 'Unknown error');
     }
     return data?.choices?.[0]?.message?.content || '⚠️ No response from AI.';
   } catch (err) {
-    console.error('OpenAI error:', err);
+    console.error('DeepSeek error:', err);
     return '⚠️ AI is temporarily unavailable. Please try again later.';
   }
 };
